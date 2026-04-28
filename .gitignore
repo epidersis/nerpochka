@@ -1,0 +1,105 @@
+# =====================
+# OS / SYSTEM
+# =====================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# =====================
+# PYTHON
+# =====================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# виртуальные окружения
+.venv/
+venv/
+env/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# mypy
+.mypy_cache/
+
+# =====================
+# BACKEND (FastAPI)
+# =====================
+backend/__pycache__/
+backend/.env
+backend/.env.*
+
+# =====================
+# ETL
+# =====================
+etl/__pycache__/
+
+# =====================
+# FRONTEND (Vue / Node)
+# =====================
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env
+frontend/.env.*
+
+# npm / yarn
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =====================
+# DOCKER
+# =====================
+*.log
+docker-compose.override.yml
+
+# =====================
+# DATABASE
+# =====================
+*.sqlite3
+*.db
+*.dump
+
+# Postgres volume (если вдруг локально создашь)
+postgres_data/
+
+# =====================
+# DATA (ВАЖНО)
+# =====================
+data/incoming/*
+data/processed/*
+
+# но оставляем структуру папок
+!data/incoming/.gitkeep
+!data/processed/.gitkeep
+
+# =====================
+# MIGRATIONS / CACHE
+# =====================
+alembic/versions/*.pyc
+
+# =====================
+# IDE
+# =====================
+.vscode/
+.idea/
+
+# =====================
+# ENV
+# =====================
+.env
+.env.*
+
+# =====================
+# TEMP FILES
+# =====================
+*.tmp
+*.bak
+*.old

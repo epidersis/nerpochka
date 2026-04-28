@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-trixie
+    container_name: budget_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: budget_analytics
+      POSTGRES_USER: budget_user
+      POSTGRES_PASSWORD: budget_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+  backend:
+    build: ./backend
+    container_name: budget_backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+    depends_on:
+      - postgres
+
+  etl:
+    build: ./etl
+    container_name: budget_etl
+    env_file:
+      - .env
+    volumes:
+      - ./etl:/etl
+      - ./data:/data
+    depends_on:
+      - postgres
+    command: tail -f /dev/null
+
+  frontend:
+    build: ./frontend
+    container_name: budget_frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
