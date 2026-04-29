@@ -1,6 +1,11 @@
+<img width="1344" height="768" alt="17774334747ecd" src="https://github.com/user-attachments/assets/724995b6-d110-4b4e-a91f-59e8e4039b14" />
+
 # nerpochka
 
 Nerpochka - система бюджетной аналитики для загрузки CSV-выгрузок, нормализации данных в PostgreSQL, построения витрины показателей и просмотра результата через API/UI с Excel-выгрузкой.
+
+> [!NOTE]
+> Материалы проекта (презентация, Demo_UI) [Яндекс Диск](https://disk.yandex.ru/d/UCPNEXK5lYpJXw)
 
 Проект поднимается одной Docker-командой: база данных, backend, ETL и frontend запускаются вместе, а ETL автоматически загружает исходные CSV и пересобирает staging/mart.
 
@@ -45,8 +50,10 @@ nerpochka/
 
 ## UI демонстрации
 
-- В демонстрации используется UI из demo_ui/
-- В сборке используется другой фронт frontend/
+> [!CAUTION]
+> В демонстрации используется UI из [demo_ui/](demo_ui)
+> 
+> В сборке используется другой фронт [frontend/](frontend)
 
 ## Быстрый старт
 
