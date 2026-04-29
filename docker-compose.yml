@@ -12,6 +12,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budget_user -d budget_analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
 
   backend:
     build: ./backend
@@ -25,7 +31,8 @@ services:
       - ./backend:/app
       - ./data:/data
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   etl:
     build: ./etl
@@ -36,8 +43,17 @@ services:
       - ./etl:/etl
       - ./data:/data
     depends_on:
-      - postgres
-    command: tail -f /dev/null
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'ETL: starting raw import' &&
+        python run_import.py &&
+        echo 'ETL: building staging and mart' &&
+        python run_pipeline.py &&
+        echo 'ETL: done, keeping container alive' &&
+        tail -f /dev/null
+      "
 
   frontend:
     build: ./frontend

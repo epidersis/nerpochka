@@ -10,9 +10,10 @@
   },
   "dependencies": {
     "@vitejs/plugin-vue": "latest",
+    "axios": "latest",
+    "echarts": "^6.0.0",
     "vite": "latest",
     "vue": "latest",
-    "axios": "latest"
-  },
-  "devDependencies": {}
+    "vue-echarts": "^8.0.1"
+  }
 }

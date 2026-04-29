@@ -7,7 +7,7 @@ DATABASE_URL = os.getenv(
     "postgresql://budget_user:budget_pass@postgres:5432/budget_analytics"
 )
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine)
 
 

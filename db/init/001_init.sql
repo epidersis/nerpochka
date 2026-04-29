@@ -77,6 +77,47 @@ create table if not exists stg.gz_payments (
     payment_amount numeric(18,2)
 );
 
+create table if not exists stg.agreements (
+    id bigserial primary key,
+    import_file_id bigint references raw.import_files(id),
+    period_from date,
+    period_to date,
+    documentclass_id text,
+    budget_id text,
+    document_id text,
+    amount numeric(18,2),
+    agreement_number text,
+    estimate_name text,
+    recipient_name text,
+    kadmr_code text,
+    kfsr_code text,
+    kcsr_code text,
+    kvr_code text,
+    kesr_code text,
+    kdr_code text,
+    kde_code text,
+    kdf_code text
+);
+
+create table if not exists stg.buau_operations (
+    id bigserial primary key,
+    import_file_id bigint references raw.import_files(id),
+    operation_date date,
+    budget_name text,
+    organization_name text,
+    provider_name text,
+    amount numeric(18,2),
+    amount_with_refund numeric(18,2),
+    refund_amount numeric(18,2),
+    kfsr_code text,
+    kcsr_code text,
+    kvr_code text,
+    kesr_code text,
+    kdr_code text,
+    kde_code text,
+    kdf_code text
+);
+
 create table if not exists mart.indicators (
     id bigserial primary key,
     source_type text not null,
