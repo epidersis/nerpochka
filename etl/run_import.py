@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import os
@@ -15,6 +16,9 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "/data/incoming"))
 
 engine = create_engine(DATABASE_URL)
 
+CSV_ENCODINGS = ("utf-8-sig", "cp1251")
+CSV_DELIMITERS = (",", ";", "\t", "|")
+
 
 def file_hash(path: Path) -> str:
     h = hashlib.sha256()
@@ -22,6 +26,64 @@ def file_hash(path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def read_text_with_encoding(path: Path) -> tuple[str, str]:
+    raw = path.read_bytes()
+    last_error = None
+
+    for encoding in CSV_ENCODINGS:
+        try:
+            return raw.decode(encoding), encoding
+        except UnicodeDecodeError as exc:
+            last_error = exc
+
+    if last_error:
+        raise last_error
+
+    return raw.decode(CSV_ENCODINGS[0]), CSV_ENCODINGS[0]
+
+
+def detect_csv_delimiter(text: str) -> str:
+    sample = text[:65536]
+
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters="".join(CSV_DELIMITERS))
+        if dialect.delimiter in CSV_DELIMITERS:
+            return dialect.delimiter
+    except csv.Error:
+        pass
+
+    lines = [
+        line
+        for line in sample.splitlines()
+        if line.strip()
+    ][:50]
+
+    scores = {}
+    for delimiter in CSV_DELIMITERS:
+        counts = [line.count(delimiter) for line in lines]
+        non_zero_counts = [count for count in counts if count > 0]
+        if not non_zero_counts:
+            continue
+
+        scores[delimiter] = (
+            len(non_zero_counts),
+            max(non_zero_counts),
+            sum(non_zero_counts),
+        )
+
+    if not scores:
+        return ","
+
+    return max(scores, key=scores.get)
+
+
+def read_csv_robust(path: Path) -> pd.DataFrame:
+    text, encoding = read_text_with_encoding(path)
+    delimiter = detect_csv_delimiter(text)
+    print(f"Reading CSV: {path.name}, encoding: {encoding}, delimiter: {repr(delimiter)}")
+    return pd.read_csv(path, sep=delimiter, engine="python", encoding=encoding)
 
 
 def insert_import_file(path: Path, folder_name: str, hash_value: str, rows_count: int):
@@ -106,10 +168,7 @@ def main():
         folder_name = path.parent.name
         hash_value = file_hash(path)
 
-        try:
-            df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            df = pd.read_csv(path, sep=None, engine="python", encoding="cp1251")
+        df = read_csv_robust(path)
 
         import_file_id = insert_import_file(path, folder_name, hash_value, len(df))
 
