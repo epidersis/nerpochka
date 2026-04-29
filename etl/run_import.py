@@ -85,7 +85,10 @@ def load_raw_rows(import_file_id: int, df: pd.DataFrame):
 
 
 def main():
-    csv_files = list(DATA_DIR.rglob("*.csv"))
+    csv_files = [
+        p for p in DATA_DIR.rglob("*")
+        if p.is_file() and p.suffix.lower() == ".csv"
+    ]
 
     print(f"Найдено CSV: {len(csv_files)}")
 
