@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import calendar
+import os
 import re
+from datetime import date
 from typing import Any
+
+from sqlalchemy import text
 
 from etl_utils import (
     bulk_insert,
@@ -9,21 +14,32 @@ from etl_utils import (
     clean_date,
     clean_decimal,
     clean_text,
+    engine,
     fetch_raw_files,
     fetch_raw_rows,
     truncate_table,
 )
 
-HEADER_MARKERS = {"КФСР", "КЦСР", "КВР", "Лимиты ПБС 2025 год"}
+REPORT_YEAR = int(os.getenv("REPORT_YEAR", "2025"))
+
+HEADER_MARKERS = {"КФСР", "КЦСР", "КВР", f"Лимиты ПБС {REPORT_YEAR} год"}
 
 AMOUNT_COLUMNS = {
-    "Лимиты ПБС 2025 год": "273",
-    "Подтв. лимитов по БО 2025 год": "313",
+    f"Лимиты ПБС {REPORT_YEAR} год": "273",
+    f"Подтв. лимитов по БО {REPORT_YEAR} год": "313",
     "Всего выбытий (бух.уч.)": "cash_execution",
 }
 
 
-def _period_to_from_file(file_name: str):
+def ensure_schema() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("""
+            alter table stg.budget_operations
+            add column if not exists kdr_name text
+        """))
+
+
+def _period_to_from_file(file_name: str) -> date | None:
     month_map = {
         "январь": 1,
         "февраль": 2,
@@ -46,9 +62,6 @@ def _period_to_from_file(file_name: str):
     year = int(year_match.group(0))
     for month_name, month in month_map.items():
         if month_name in lower_name:
-            from datetime import date
-            import calendar
-
             return date(year, month, calendar.monthrange(year, month)[1])
     return None
 
@@ -77,6 +90,9 @@ def _build_rows(import_file_id: int, file_name: str, rows, header: dict[str, str
     result = []
     period_to = _period_to_from_file(file_name)
 
+    if period_to is None or period_to.year != REPORT_YEAR:
+        return result
+
     for raw_row in rows:
         if raw_row["row_number"] <= header_row:
             continue
@@ -102,6 +118,7 @@ def _build_rows(import_file_id: int, file_name: str, rows, header: dict[str, str
             "kvr_code": kvr_code,
             "kesr_code": clean_code(_get(data, header, "КОСГУ")),
             "kdr_code": clean_code(_get(data, header, "Код цели")),
+            "kdr_name": clean_text(_get(data, header, "Наименование Код цели")),
             "kde_code": clean_code(_get(data, header, "КВФО")),
             "kdf_code": clean_code(_get(data, header, "Источник средств")),
         }
@@ -120,7 +137,8 @@ def _build_rows(import_file_id: int, file_name: str, rows, header: dict[str, str
 
 
 def run() -> int:
-    print("load_rchb: truncate stg.budget_operations")
+    print("load_rchb: ensure schema and truncate stg.budget_operations")
+    ensure_schema()
     truncate_table("stg.budget_operations")
 
     total = 0

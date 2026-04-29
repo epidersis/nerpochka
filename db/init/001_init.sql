@@ -114,6 +114,7 @@ create table if not exists stg.buau_operations (
     kvr_code text,
     kesr_code text,
     kdr_code text,
+    kdr_name text,
     kde_code text,
     kdf_code text
 );

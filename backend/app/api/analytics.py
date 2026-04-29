@@ -22,7 +22,10 @@ def get_summary(
             sum(amount) as amount
         from mart.indicators
         where (:section is null or section = :section)
-          and (:kcsr_code is null or kcsr_code = :kcsr_code)
+          and (
+              :kcsr_code is null
+              or replace(kcsr_code, '.', '') = replace(:kcsr_code, '.', '')
+          )
           and (:indicator_type is null or indicator_type = :indicator_type)
           and (:period_to is null or period_to = cast(:period_to as date))
         group by section, kcsr_code, object_name, indicator_type

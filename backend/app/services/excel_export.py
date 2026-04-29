@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
@@ -13,27 +14,38 @@ from sqlalchemy import text
 
 from app.database import engine
 
+REPORT_YEAR = int(os.getenv("REPORT_YEAR", "2025"))
+
 SECTION_SHEETS = [
     {
         "section": "КИК",
         "sheet": "Раздел 1 (КИК)",
         "title": "Раздел 1. КИК",
-        "note": "КЦСР=*****978**",
+        "note": "КЦСР=*****975**",
         "name_header": "Наименование мероприятия",
+        "mode": "kcsr",
+        "pattern": "%975%",
+        "last_col": 45,
     },
     {
         "section": "СКК",
         "sheet": "Раздел 2 (СКК)",
         "title": "Раздел 2. Сведения о кассовых операциях за счет средств специальных казначейских кредитов (СКК)",
-        "note": "КЦСР=*****6105*",
+        "note": "КЦСР=*****970**",
         "name_header": "Наименование мероприятия",
+        "mode": "kcsr",
+        "pattern": "%970%",
+        "last_col": 45,
     },
     {
         "section": "Раздел 2/3",
         "sheet": "23",
         "title": "Раздел 3. 2/3",
-        "note": "КЦСР=*****970**",
+        "note": "КЦСР=*****6105*",
         "name_header": "Наименование мероприятия",
+        "mode": "kcsr",
+        "pattern": "%6105%",
+        "last_col": 49,
     },
     {
         "section": "ОКВ",
@@ -41,39 +53,33 @@ SECTION_SHEETS = [
         "title": "Раздел 4. Объекты капитальных вложений",
         "note": "ДопКР не равен 0",
         "name_header": "Наименование объекта",
+        "mode": "okv",
+        "pattern": None,
+        "last_col": 56,
     },
 ]
 
 NUMBER_FORMAT = '#,##0.00'
 DATE_FORMAT = 'DD.MM.YYYY'
 
-
-def _section_sql(alias: str = "") -> str:
-    prefix = f"{alias}." if alias else ""
-    return f"""
-        case
-            when {prefix}kcsr_code ilike '%6105%' then 'СКК'
-            when {prefix}kcsr_code ilike '%978%' then 'КИК'
-            when {prefix}kcsr_code ilike '%970%' then 'Раздел 2/3'
-            when nullif({prefix}kdr_code, '') is not null and {prefix}kdr_code not in ('0', '0.0') then 'ОКВ'
-            else 'Другое'
-        end
-    """
-
-
-def _object_key_sql(alias: str = "") -> str:
-    prefix = f"{alias}." if alias else ""
-    return f"""
-        replace(
-            case
-                when ({_section_sql(alias)}) = 'ОКВ'
-                    then coalesce(nullif({prefix}kdr_code, ''), {prefix}kcsr_code)
-                else {prefix}kcsr_code
-            end,
-            '.',
-            ''
-        )
-    """
+AMOUNT_KEYS = (
+    "limit_amount",
+    "obligation_amount",
+    "cash_amount",
+    "cash_contract_amount",
+    "cash_subsidy_amount",
+    "cash_mbt_amount",
+    "local_limit_amount",
+    "local_obligation_amount",
+    "local_cash_amount",
+    "local_cash_contract_amount",
+    "local_cash_subsidy_amount",
+    "local_cash_mbt_amount",
+    "contract_amount",
+    "mbt_amount",
+    "subsidy_amount",
+    "buau_cash_amount",
+)
 
 
 def _to_float(value: Any) -> float:
@@ -91,154 +97,284 @@ def _first_text(*values: Any) -> str | None:
     return None
 
 
-def _fetch_base_rows(section_filter: str | None, kcsr_code: str | None) -> dict[tuple[str, str], dict[str, Any]]:
+def _kvr_digits_sql(alias: str) -> str:
+    return f"regexp_replace(coalesce({alias}.kvr_code, ''), '[^0-9]', '', 'g')"
+
+
+def _base_filter_sql(alias: str, mode: str) -> str:
+    if mode == "okv":
+        return f"nullif({alias}.kdr_code, '') is not null and {alias}.kdr_code not in ('0', '0.0')"
+    return f"{alias}.kcsr_code ilike :pattern"
+
+
+def _object_code_sql(alias: str, mode: str) -> str:
+    if mode == "okv":
+        return f"coalesce(nullif({alias}.kdr_code, ''), {alias}.kcsr_code)"
+    return f"replace({alias}.kcsr_code, '.', '')"
+
+
+def _object_name_sql(alias: str, mode: str) -> str:
+    if mode == "okv":
+        return f"coalesce(nullif({alias}.kdr_name, ''), nullif({alias}.estimate_name, ''), nullif({alias}.recipient_name, ''), nullif({alias}.kdr_code, ''), {alias}.kcsr_code)"
+    return f"coalesce(nullif({alias}.estimate_name, ''), nullif({alias}.recipient_name, ''), {alias}.kcsr_code)"
+
+
+def _is_subject_budget_sql(alias: str) -> str:
+    return f"{alias}.budget_id ilike 'Областной бюджет%'"
+
+
+def _is_local_budget_sql(alias: str) -> str:
+    return f"not ({_is_subject_budget_sql(alias)})"
+
+
+def _latest_rchb_period(conn):
+    return conn.execute(
+        text("""
+            select max(period_to)
+            from stg.budget_operations
+            where amount is not null
+              and extract(year from period_to) = :report_year
+        """),
+        {"report_year": REPORT_YEAR},
+    ).scalar()
+
+
+def _fetch_base_rows(conn, meta: dict[str, Any], kcsr_code: str | None) -> dict[str, dict[str, Any]]:
+    mode = meta["mode"]
+    latest_period = _latest_rchb_period(conn)
+    params = {
+        "pattern": meta["pattern"],
+        "kcsr_code": kcsr_code,
+        "latest_period": latest_period,
+    }
     query = text(f"""
         select
-            ({_section_sql('b')}) as section,
-            ({_object_key_sql('b')}) as object_code,
-            coalesce(max(nullif(b.estimate_name, '')), max(nullif(b.recipient_name, '')), ({_object_key_sql('b')})) as object_name,
+            {_object_name_sql('b', mode)} as object_code,
+            {_object_name_sql('b', mode)} as object_name,
             max(b.kcsr_code) as kcsr_code,
             max(b.kdr_code) as kdr_code,
-            sum(b.amount) filter (where b.documentclass_id = '273') as limit_amount,
-            sum(b.amount) filter (where b.documentclass_id = '313') as obligation_amount,
-            sum(b.amount) filter (where b.documentclass_id = 'cash_execution') as cash_amount,
+            sum(b.amount) filter (where b.documentclass_id = '273' and {_is_subject_budget_sql('b')}) as limit_amount,
+            sum(b.amount) filter (where b.documentclass_id = '313' and {_is_subject_budget_sql('b')}) as obligation_amount,
+            sum(b.amount) filter (where b.documentclass_id = 'cash_execution' and {_is_subject_budget_sql('b')}) as cash_amount,
             sum(b.amount) filter (
                 where b.documentclass_id = 'cash_execution'
-                  and regexp_replace(coalesce(b.kvr_code, ''), '[^0-9]', '', 'g') like '2%%'
+                  and {_is_subject_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '2%%'
             ) as cash_contract_amount,
             sum(b.amount) filter (
                 where b.documentclass_id = 'cash_execution'
-                  and regexp_replace(coalesce(b.kvr_code, ''), '[^0-9]', '', 'g') like '6%%'
+                  and {_is_subject_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '6%%'
             ) as cash_subsidy_amount,
             sum(b.amount) filter (
                 where b.documentclass_id = 'cash_execution'
-                  and regexp_replace(coalesce(b.kvr_code, ''), '[^0-9]', '', 'g') like '5%%'
-            ) as cash_mbt_amount
+                  and {_is_subject_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '5%%'
+            ) as cash_mbt_amount,
+            sum(b.amount) filter (where b.documentclass_id = '273' and {_is_local_budget_sql('b')}) as local_limit_amount,
+            sum(b.amount) filter (where b.documentclass_id = '313' and {_is_local_budget_sql('b')}) as local_obligation_amount,
+            sum(b.amount) filter (where b.documentclass_id = 'cash_execution' and {_is_local_budget_sql('b')}) as local_cash_amount,
+            sum(b.amount) filter (
+                where b.documentclass_id = 'cash_execution'
+                  and {_is_local_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '2%%'
+            ) as local_cash_contract_amount,
+            sum(b.amount) filter (
+                where b.documentclass_id = 'cash_execution'
+                  and {_is_local_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '6%%'
+            ) as local_cash_subsidy_amount,
+            sum(b.amount) filter (
+                where b.documentclass_id = 'cash_execution'
+                  and {_is_local_budget_sql('b')}
+                  and {_kvr_digits_sql('b')} like '5%%'
+            ) as local_cash_mbt_amount
         from stg.budget_operations b
-        where (:section is null or ({_section_sql('b')}) = :section)
+        where b.period_to = :latest_period
+          and ({_base_filter_sql('b', mode)})
           and (:kcsr_code is null or replace(b.kcsr_code, '.', '') = replace(:kcsr_code, '.', ''))
-        group by section, object_code
-        order by section, object_name
+        group by object_code, object_name
+        order by object_name
     """)
 
-    rows: dict[tuple[str, str], dict[str, Any]] = {}
-    with engine.connect() as conn:
-        for row in conn.execute(query, {"section": section_filter, "kcsr_code": kcsr_code}).mappings():
-            key = (row["section"], row["object_code"])
-            rows[key] = {
-                "section": row["section"],
-                "object_code": row["object_code"],
-                "object_name": row["object_name"],
-                "kcsr_code": row["kcsr_code"],
-                "kdr_code": row["kdr_code"],
-                "limit_amount": _to_float(row["limit_amount"]),
-                "obligation_amount": _to_float(row["obligation_amount"]),
+    rows: dict[str, dict[str, Any]] = {}
+    for row in conn.execute(query, params).mappings():
+        rows[row["object_code"]] = {
+            "object_code": row["object_code"],
+            "object_name": row["object_name"],
+            "kcsr_code": row["kcsr_code"],
+            "kdr_code": row["kdr_code"],
+            "limit_amount": _to_float(row["limit_amount"]),
+            "obligation_amount": _to_float(row["obligation_amount"]),
                 "cash_amount": _to_float(row["cash_amount"]),
                 "cash_contract_amount": _to_float(row["cash_contract_amount"]),
                 "cash_subsidy_amount": _to_float(row["cash_subsidy_amount"]),
                 "cash_mbt_amount": _to_float(row["cash_mbt_amount"]),
+                "local_limit_amount": _to_float(row["local_limit_amount"]),
+                "local_obligation_amount": _to_float(row["local_obligation_amount"]),
+                "local_cash_amount": _to_float(row["local_cash_amount"]),
+                "local_cash_contract_amount": _to_float(row["local_cash_contract_amount"]),
+                "local_cash_subsidy_amount": _to_float(row["local_cash_subsidy_amount"]),
+                "local_cash_mbt_amount": _to_float(row["local_cash_mbt_amount"]),
             }
     return rows
 
 
-def _merge_detail(target: dict[tuple[str, str], dict[str, Any]], key: tuple[str, str], prefix: str, row: dict[str, Any]) -> None:
+def _merge_detail(target: dict[str, dict[str, Any]], key: str, prefix: str, row: dict[str, Any]) -> None:
     item = target.setdefault(key, {
-        "section": key[0],
-        "object_code": key[1],
-        "object_name": key[1],
+        "object_code": key,
+        "object_name": _first_text(row.get("object_name"), key),
         "limit_amount": 0.0,
         "obligation_amount": 0.0,
         "cash_amount": 0.0,
         "cash_contract_amount": 0.0,
         "cash_subsidy_amount": 0.0,
         "cash_mbt_amount": 0.0,
+        "local_limit_amount": 0.0,
+        "local_obligation_amount": 0.0,
+        "local_cash_amount": 0.0,
+        "local_cash_contract_amount": 0.0,
+        "local_cash_subsidy_amount": 0.0,
+        "local_cash_mbt_amount": 0.0,
     })
-    item["object_name"] = _first_text(item.get("object_name"), row.get("object_name"), key[1])
+    if not item.get("object_name") or item["object_name"] == key:
+        item["object_name"] = _first_text(row.get("object_name"), key)
     item[f"{prefix}_amount"] = item.get(f"{prefix}_amount", 0.0) + _to_float(row.get("amount"))
     item.setdefault(f"{prefix}_date", row.get("date_value"))
     item.setdefault(f"{prefix}_number", row.get("number_value"))
     item.setdefault(f"{prefix}_name", row.get("name_value"))
 
 
-def _fetch_contracts(target: dict[tuple[str, str], dict[str, Any]], section_filter: str | None, kcsr_code: str | None) -> None:
+def _fetch_contracts(conn, target: dict[str, dict[str, Any]], meta: dict[str, Any], kcsr_code: str | None) -> None:
+    mode = meta["mode"]
+    params = {"pattern": meta["pattern"], "kcsr_code": kcsr_code}
+    rchb_object_code = (
+        "coalesce(nullif(rb.kdr_name, ''), nullif(rb.estimate_name, ''), nullif(b.kdr_code, ''), b.kcsr_code)"
+        if mode == "okv"
+        else "coalesce(nullif(rb.estimate_name, ''), b.kcsr_code)"
+    )
     query = text(f"""
+        with latest_rchb as (
+            select max(period_to) as period_to
+            from stg.budget_operations
+            where amount is not null
+              and extract(year from period_to) = :report_year
+        )
         select
-            ({_section_sql('b')}) as section,
-            ({_object_key_sql('b')}) as object_code,
-            b.kcsr_code,
+            {rchb_object_code} as object_code,
+            {rchb_object_code} as object_name,
             c.con_date as date_value,
             c.con_number as number_value,
             coalesce(c.supplier_name, c.customer_name) as name_value,
-            c.con_amount as amount,
-            coalesce(b.kcsr_code, ({_object_key_sql('b')})) as object_name
+            c.con_amount as amount
         from stg.gz_contracts c
         join stg.gz_budget_lines b on b.con_document_id = c.con_document_id
-        where (:section is null or ({_section_sql('b')}) = :section)
+        left join stg.budget_operations rb
+          on rb.period_to = (select period_to from latest_rchb)
+         and replace(rb.kcsr_code, '.', '') = replace(b.kcsr_code, '.', '')
+         and (
+              :mode <> 'okv'
+              or coalesce(rb.kdr_code, '') = coalesce(b.kdr_code, '')
+         )
+        where ({_base_filter_sql('b', mode)})
           and (:kcsr_code is null or replace(b.kcsr_code, '.', '') = replace(:kcsr_code, '.', ''))
           and c.con_amount is not null
     """)
-    with engine.connect() as conn:
-        for row in conn.execute(query, {"section": section_filter, "kcsr_code": kcsr_code}).mappings():
-            _merge_detail(target, (row["section"], row["object_code"]), "contract", dict(row))
+    seen = set()
+    for row in conn.execute(query, {**params, "report_year": REPORT_YEAR, "mode": mode}).mappings():
+        dedupe_key = (row["object_code"], row["number_value"], row["amount"])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        _merge_detail(target, row["object_code"], "contract", dict(row))
 
 
-def _fetch_agreements(target: dict[tuple[str, str], dict[str, Any]], section_filter: str | None, kcsr_code: str | None) -> None:
+def _fetch_agreements(conn, target: dict[str, dict[str, Any]], meta: dict[str, Any], kcsr_code: str | None) -> None:
+    mode = meta["mode"]
+    params = {"pattern": meta["pattern"], "kcsr_code": kcsr_code}
+    object_code_sql = "coalesce(nullif(a.kdr_code, ''), a.kcsr_code)" if mode == "okv" else "replace(a.kcsr_code, '.', '')"
+    base_filter = (
+        "nullif(a.kdr_code, '') is not null and a.kdr_code not in ('0', '0.0')"
+        if mode == "okv"
+        else "a.kcsr_code ilike :pattern"
+    )
     query = text(f"""
+        with latest_agreements as (
+            select max(period_to) as period_to
+            from stg.agreements
+            where amount is not null
+              and extract(year from period_to) = :report_year
+        ),
+        ranked as (
+            select
+                a.*,
+                row_number() over (
+                    partition by a.document_id, a.kcsr_code, coalesce(a.kdr_code, ''), a.documentclass_id
+                    order by a.period_to desc, a.import_file_id desc
+                ) as rn
+            from stg.agreements a
+            where ({base_filter})
+              and (:kcsr_code is null or replace(a.kcsr_code, '.', '') = replace(:kcsr_code, '.', ''))
+              and a.period_to = (select period_to from latest_agreements)
+              and a.amount is not null
+        )
         select
-            ({_section_sql('a')}) as section,
-            ({_object_key_sql('a')}) as object_code,
-            a.documentclass_id,
-            a.period_to as date_value,
-            a.agreement_number as number_value,
-            a.recipient_name as name_value,
-            a.amount,
-            coalesce(a.estimate_name, a.kcsr_code, ({_object_key_sql('a')})) as object_name
-        from stg.agreements a
-        where (:section is null or ({_section_sql('a')}) = :section)
-          and (:kcsr_code is null or replace(a.kcsr_code, '.', '') = replace(:kcsr_code, '.', ''))
-          and a.amount is not null
+            {object_code_sql} as object_code,
+            coalesce(nullif(estimate_name, ''), nullif(recipient_name, ''), kcsr_code, {object_code_sql}) as object_name,
+            documentclass_id,
+            period_to as date_value,
+            agreement_number as number_value,
+            recipient_name as name_value,
+            amount
+        from ranked a
+        where rn = 1
     """)
-    with engine.connect() as conn:
-        for row in conn.execute(query, {"section": section_filter, "kcsr_code": kcsr_code}).mappings():
-            prefix = "mbt" if row["documentclass_id"] == "273" else "subsidy"
-            _merge_detail(target, (row["section"], row["object_code"]), prefix, dict(row))
+    for row in conn.execute(query, {**params, "report_year": REPORT_YEAR}).mappings():
+        prefix = "mbt" if row["documentclass_id"] == "273" else "subsidy"
+        _merge_detail(target, row["object_code"], prefix, dict(row))
 
 
-def _fetch_buau(target: dict[tuple[str, str], dict[str, Any]], section_filter: str | None, kcsr_code: str | None) -> None:
+def _fetch_buau(conn, target: dict[str, dict[str, Any]], meta: dict[str, Any], kcsr_code: str | None) -> None:
+    mode = meta["mode"]
+    params = {"pattern": meta["pattern"], "kcsr_code": kcsr_code}
+    object_code_sql = "coalesce(nullif(b.kdr_code, ''), b.kcsr_code)" if mode == "okv" else "replace(b.kcsr_code, '.', '')"
+    base_filter = (
+        "nullif(b.kdr_code, '') is not null and b.kdr_code not in ('0', '0.0')"
+        if mode == "okv"
+        else "b.kcsr_code ilike :pattern"
+    )
     query = text(f"""
         select
-            ({_section_sql('b')}) as section,
-            ({_object_key_sql('b')}) as object_code,
-            coalesce(b.amount_with_refund, b.amount) as amount,
-            coalesce(b.organization_name, b.budget_name, b.kcsr_code, ({_object_key_sql('b')})) as object_name
+            {object_code_sql} as object_code,
+            coalesce(b.organization_name, b.budget_name, b.kcsr_code, {object_code_sql}) as object_name,
+            sum(coalesce(b.amount_with_refund, b.amount)) as amount
         from stg.buau_operations b
-        where (:section is null or ({_section_sql('b')}) = :section)
+        where ({base_filter})
           and (:kcsr_code is null or replace(b.kcsr_code, '.', '') = replace(:kcsr_code, '.', ''))
+          and extract(year from b.operation_date) = :report_year
           and coalesce(b.amount_with_refund, b.amount) is not null
+        group by object_code, object_name
     """)
+    for row in conn.execute(query, {**params, "report_year": REPORT_YEAR}).mappings():
+        item = target.setdefault(row["object_code"], {
+            "object_code": row["object_code"],
+            "object_name": row["object_name"] or row["object_code"],
+        })
+        item["buau_cash_amount"] = item.get("buau_cash_amount", 0.0) + _to_float(row["amount"])
+
+
+def _load_sheet_data(meta: dict[str, Any], kcsr_code: str | None) -> list[dict[str, Any]]:
     with engine.connect() as conn:
-        for row in conn.execute(query, {"section": section_filter, "kcsr_code": kcsr_code}).mappings():
-            item = target.setdefault((row["section"], row["object_code"]), {
-                "section": row["section"],
-                "object_code": row["object_code"],
-                "object_name": row["object_name"] or row["object_code"],
-            })
-            item["buau_cash_amount"] = item.get("buau_cash_amount", 0.0) + _to_float(row["amount"])
-
-
-def _load_export_data(section_filter: str | None, kcsr_code: str | None) -> dict[str, list[dict[str, Any]]]:
-    items = _fetch_base_rows(section_filter, kcsr_code)
-    _fetch_contracts(items, section_filter, kcsr_code)
-    _fetch_agreements(items, section_filter, kcsr_code)
-    _fetch_buau(items, section_filter, kcsr_code)
-
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for item in items.values():
-        grouped[item["section"]].append(item)
-
-    for rows in grouped.values():
-        rows.sort(key=lambda row: (row.get("object_name") or "", row.get("object_code") or ""))
-    return grouped
+        rows = _fetch_base_rows(conn, meta, kcsr_code)
+        _fetch_contracts(conn, rows, meta, kcsr_code)
+        _fetch_agreements(conn, rows, meta, kcsr_code)
+        _fetch_buau(conn, rows, meta, kcsr_code)
+    non_empty_rows = [
+        row
+        for row in rows.values()
+        if any(_to_float(row.get(key)) != 0 for key in AMOUNT_KEYS)
+    ]
+    return sorted(non_empty_rows, key=lambda row: (row.get("object_name") or "", row.get("object_code") or ""))
 
 
 def _set_title(ws, title: str, note: str, last_col: int) -> None:
@@ -252,11 +388,11 @@ def _set_title(ws, title: str, note: str, last_col: int) -> None:
 
 def _merge(ws, cell_range: str, value: str) -> None:
     ws.merge_cells(cell_range)
-    cell = ws[cell_range.split(":", 1)[0]]
-    cell.value = value
+    ws[cell_range.split(":", 1)[0]].value = value
 
 
-def _build_headers(ws, meta: dict[str, str], last_col: int) -> None:
+def _build_headers(ws, meta: dict[str, Any]) -> None:
+    last_col = meta["last_col"]
     _set_title(ws, meta["title"], meta["note"], last_col)
 
     header_ranges = [
@@ -273,7 +409,7 @@ def _build_headers(ws, meta: dict[str, str], last_col: int) -> None:
         ("AM4:AQ6", "кассовые выплаты из местных бюджетов"),
     ]
     if last_col >= 53:
-        header_ranges.append(("AR4:BA6", "дополнительные сведения по ОКВ/БУАУ"))
+        header_ranges.append(("AR4:BD6", "дополнительные сведения по ОКВ/БУАУ"))
 
     for cell_range, value in header_ranges:
         _merge(ws, cell_range, value)
@@ -287,40 +423,17 @@ def _build_headers(ws, meta: dict[str, str], last_col: int) -> None:
         "AC": "лимит", "AD": "БО всего", "AE": "контракты", "AF": "субсидии", "AG": "касса БУ/АУ",
         "AH": "Дата", "AI": "Номер", "AJ": "Контрагент", "AK": "Сумма", "AL": "итого БУ/АУ",
         "AM": "всего", "AN": "контракты", "AO": "субсидии", "AP": "касса БУ/АУ", "AQ": "примечание",
-        "AR": "факт поставки", "AS": "дата оплаты", "AT": "№ документа", "AU": "сумма",
+        "AR": "факт поставки", "AS": "дата оплаты", "AT": "N документа", "AU": "сумма",
         "AV": "местный лимит", "AW": "местное БО", "AX": "местная касса", "AY": "контракты",
-        "AZ": "субсидии", "BA": "касса АУ/БУ",
+        "AZ": "субсидии", "BA": "касса АУ/БУ", "BB": "код объекта", "BC": "КЦСР", "BD": "ДопКР",
     }
     for column, value in row7.items():
-        if column_index_from_string(column) <= last_col:
+        col_index = column_index_from_string(column)
+        if col_index <= last_col:
             ws[column + "7"] = value
 
     for col in range(1, last_col + 1):
         ws.cell(8, col, col)
-
-    source_notes = [
-        "РЧБ - Наименование",
-        "РЧБ - Лимиты",
-        "РЧБ - Подтв. лимитов по БО",
-        "ГЗ - con_amount",
-        "ГЗ - con_date",
-        "ГЗ - con_number",
-        "ГЗ - contractor",
-        "ГЗ - con_amount",
-        "Соглашения МБТ - amount_1year",
-        "Соглашения МБТ - date",
-        "Соглашения МБТ - number",
-        "Соглашения МБТ - recipient",
-        "Соглашения МБТ - amount",
-        "Соглашения БУ/АУ - amount",
-        "Соглашения БУ/АУ - date",
-        "Соглашения БУ/АУ - number",
-        "Соглашения БУ/АУ - recipient",
-        "Соглашения БУ/АУ - amount",
-    ]
-    for index, value in enumerate(source_notes, start=1):
-        if index <= last_col:
-            ws.cell(9, index, value)
 
 
 def _apply_style(ws, last_col: int) -> None:
@@ -358,9 +471,8 @@ def _write_value(ws, row: int, col: int, value: Any) -> None:
 
 
 def _write_data(ws, rows: list[dict[str, Any]], last_col: int) -> None:
-    start_row = 10
     for offset, item in enumerate(rows):
-        row = start_row + offset
+        row = 10 + offset
         values = {
             1: item.get("object_name"),
             2: item.get("limit_amount"),
@@ -385,8 +497,8 @@ def _write_data(ws, rows: list[dict[str, Any]], last_col: int) -> None:
             26: item.get("cash_subsidy_amount"),
             27: item.get("cash_mbt_amount"),
             28: item.get("buau_cash_amount"),
-            29: item.get("limit_amount"),
-            30: item.get("obligation_amount"),
+            29: item.get("local_limit_amount"),
+            30: item.get("local_obligation_amount"),
             31: item.get("contract_amount"),
             32: item.get("subsidy_amount"),
             33: item.get("buau_cash_amount"),
@@ -395,21 +507,21 @@ def _write_data(ws, rows: list[dict[str, Any]], last_col: int) -> None:
             36: item.get("contract_name"),
             37: item.get("contract_amount"),
             38: item.get("subsidy_amount"),
-            39: item.get("cash_amount"),
-            40: item.get("cash_contract_amount"),
-            41: item.get("cash_subsidy_amount"),
+            39: item.get("local_cash_amount"),
+            40: item.get("local_cash_contract_amount"),
+            41: item.get("local_cash_subsidy_amount"),
             42: item.get("buau_cash_amount"),
             43: item.get("object_code"),
-            44: None,
             45: item.get("buau_cash_amount"),
-            46: item.get("limit_amount"),
-            47: item.get("obligation_amount"),
-            48: item.get("cash_amount"),
-            49: item.get("cash_contract_amount"),
-            50: item.get("cash_subsidy_amount"),
+            46: item.get("local_limit_amount"),
+            47: item.get("local_obligation_amount"),
+            48: item.get("local_cash_amount"),
+            49: item.get("local_cash_contract_amount"),
+            50: item.get("local_cash_subsidy_amount"),
             51: item.get("buau_cash_amount"),
             52: item.get("object_code"),
-            53: item.get("buau_cash_amount"),
+            53: item.get("kcsr_code"),
+            56: item.get("kdr_code"),
         }
         for col, value in values.items():
             if col <= last_col and value not in (None, ""):
@@ -426,7 +538,6 @@ def _write_data(ws, rows: list[dict[str, Any]], last_col: int) -> None:
 
 
 def build_analytics_export(section: str | None = None, kcsr_code: str | None = None) -> BytesIO:
-    data = _load_export_data(section, kcsr_code)
     wb = Workbook()
     wb.remove(wb.active)
     wb.properties.title = "Сводная выгрузка nerpochka"
@@ -435,11 +546,10 @@ def build_analytics_export(section: str | None = None, kcsr_code: str | None = N
     for meta in SECTION_SHEETS:
         if section and meta["section"] != section:
             continue
-        last_col = 53 if meta["section"] == "ОКВ" else 49 if meta["section"] == "Раздел 2/3" else 45
         ws = wb.create_sheet(meta["sheet"])
-        _build_headers(ws, meta, last_col)
-        _apply_style(ws, last_col)
-        _write_data(ws, data.get(meta["section"], []), last_col)
+        _build_headers(ws, meta)
+        _apply_style(ws, meta["last_col"])
+        _write_data(ws, _load_sheet_data(meta, kcsr_code), meta["last_col"])
 
     if not wb.worksheets:
         ws = wb.create_sheet("Нет данных")
