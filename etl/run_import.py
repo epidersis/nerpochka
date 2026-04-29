@@ -1,12 +1,14 @@
-import os
 import hashlib
-import pandas as pd
+import json
+import os
 from pathlib import Path
+
+import pandas as pd
 from sqlalchemy import create_engine, text
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://budget_user:budget_pass@postgres:5432/budget_analytics"
+    "postgresql://budget_user:budget_pass@postgres:5432/budget_analytics",
 )
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/incoming"))
@@ -26,7 +28,7 @@ def insert_import_file(path: Path, folder_name: str, hash_value: str, rows_count
     with engine.begin() as conn:
         exists = conn.execute(
             text("select id from raw.import_files where file_hash = :hash"),
-            {"hash": hash_value}
+            {"hash": hash_value},
         ).fetchone()
 
         if exists:
@@ -47,7 +49,7 @@ def insert_import_file(path: Path, folder_name: str, hash_value: str, rows_count
                 "file_hash": hash_value,
                 "file_type": path.suffix.lower(),
                 "rows_count": rows_count,
-            }
+            },
         )
 
         return result.scalar_one()
@@ -77,41 +79,46 @@ def load_raw_rows(import_file_id: int, df: pd.DataFrame):
                 {
                     "import_file_id": r["import_file_id"],
                     "row_number": r["row_number"],
-                    "data": pd.io.json.dumps(r["data"], force_ascii=False),
+                    "data": json.dumps(r["data"], ensure_ascii=False),
                 }
                 for r in rows
-            ]
+            ],
         )
 
 
 def main():
-    csv_files = [
+    print(f"DATA_DIR: {DATA_DIR.resolve()}")
+
+    if not DATA_DIR.exists():
+        print(f"DATA_DIR does not exist: {DATA_DIR}")
+        return
+
+    csv_files = sorted(
         p for p in DATA_DIR.rglob("*")
         if p.is_file() and p.suffix.lower() == ".csv"
-    ]
+    )
 
-    print(f"Найдено CSV: {len(csv_files)}")
+    print(f"Found CSV files: {len(csv_files)}")
+    for path in csv_files:
+        print(f" - {path}")
 
     for path in csv_files:
         folder_name = path.parent.name
         hash_value = file_hash(path)
 
         try:
-            df = pd.read_csv(path, sep=None, engine="python",
-                             encoding="utf-8-sig")
+            df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
         except UnicodeDecodeError:
-            df = pd.read_csv(path, sep=None, engine="python",
-                             encoding="cp1251")
+            df = pd.read_csv(path, sep=None, engine="python", encoding="cp1251")
 
-        import_file_id = insert_import_file(
-            path, folder_name, hash_value, len(df))
+        import_file_id = insert_import_file(path, folder_name, hash_value, len(df))
 
         if import_file_id is None:
-            print(f"Пропущен дубль: {path.name}")
+            print(f"Skipped duplicate: {path.name}")
             continue
 
         load_raw_rows(import_file_id, df)
-        print(f"Загружен raw: {path.name}, строк: {len(df)}")
+        print(f"Loaded raw: {path.name}, rows: {len(df)}")
 
 
 if __name__ == "__main__":
