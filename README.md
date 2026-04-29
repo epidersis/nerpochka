@@ -30,6 +30,7 @@ Nerpochka - система бюджетной аналитики для загр
 
 ```text
 nerpochka/
+  demo_ui/
   backend/              FastAPI API и XLSX-экспорт
   data/incoming/        входные CSV-файлы для импорта
   db/init/              SQL-инициализация схем raw/stg/mart
@@ -38,6 +39,11 @@ nerpochka/
   docker-compose.yml    единый запуск сервисов
   .env                  переменные окружения для контейнеров
 ```
+
+## UI демонстрации
+
+- В демонстрации используется UI из demo_ui/
+- В сборке используется другой фронт frontend/
 
 ## Быстрый старт
 
