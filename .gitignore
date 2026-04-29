@@ -73,8 +73,7 @@ postgres_data/
 # =====================
 # DATA (ВАЖНО)
 # =====================
-data/incoming/*
-data/processed/*
+
 
 # но оставляем структуру папок
 !data/incoming/.gitkeep
