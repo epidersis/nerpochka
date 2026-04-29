@@ -1,3 +1,5 @@
+<img width="1344" height="768" alt="17774334747ecd" src="https://github.com/user-attachments/assets/724995b6-d110-4b4e-a91f-59e8e4039b14" />
+
 # nerpochka
 
 Nerpochka - система бюджетной аналитики для загрузки CSV-выгрузок, нормализации данных в PostgreSQL, построения витрины показателей и просмотра результата через API/UI с Excel-выгрузкой.
