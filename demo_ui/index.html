@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Конструктор аналитических выборок | БФТ & Минфин АО</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                 <div class="logo-icon" style = "background-color: #30243a; padding: 3%; border-radius:10%">
+                    <object width="100" data="Код.svg" type="image/svg+xml"></object>
+                    <!-- <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="40" height="40" rx="8" fill="url(#gradient1)"/>
+                        <path d="M12 20L18 26L28 14" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs>
+                            <linearGradient id="gradient1" x1="0" y1="0" x2="40" y2="40">
+                                <stop stop-color="#667EEA"/>
+                                <stop offset="1" stop-color="#764BA2"/>
+                            </linearGradient>
+                        </defs>
+                    </svg> -->
+                </div>
+                <div class="logo-text">
+                    <h1>АЦК-Аналитика</h1>
+                    <p>Конструктор аналитических выборок</p>
+                </div>
+            </div>
+            <div class="header-info">
+                <span class="badge">Минфин Амурской области</span>
+                <span class="badge badge-secondary">БФТ</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Search Section -->
+        <section class="search-section">
+            <div class="search-container">
+                <h2 class="search-title">Создайте аналитическую выборку</h2>
+                <p class="search-subtitle">Введите запрос в свободной форме или используйте фильтры ниже</p>
+                
+                <!-- Smart Search Bar -->
+                <div class="search-bar-wrapper">
+                    <div class="search-bar">
+                        <button class="voice-btn" id="voiceBtn" title="Голосовой ввод">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </button>
+                        <input type="text" 
+                               id="smartSearch" 
+                               class="search-input" 
+                               placeholder="Например: покажи расходы на образование за 2025 год по Тынде..."
+                               autocomplete="off">
+                        <button class="search-submit" id="searchSubmit">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="search-hints">
+                        <span class="hint">📊 "План vs Касса"</span>
+                        <span class="hint">📅 "Сравнить 2024 и 2025"</span>
+                        <span class="hint">🏗️ "Объекты по дорожному хозяйству"</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filters Section -->
+        <section class="filters-section">
+            <div class="filters-grid">
+                <!-- Data Source Filter -->
+                <div class="filter-card">
+                    <div class="filter-header">
+                        <div class="filter-icon source-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                            </svg>
+                        </div>
+                        <h3>Источник данных</h3>
+                    </div>
+                    <div class="filter-body">
+                        <div class="checkbox-group">
+                            <label class="checkbox-item active">
+                                <input type="checkbox" name="source" value="planning" checked>
+                                <span class="checkmark"></span>
+                                <span class="label">
+                                    <strong>АЦК-Планирование</strong>
+                                    <small>Роспись, программы, задания</small>
+                                </span>
+                            </label>
+                            <label class="checkbox-item active">
+                                <input type="checkbox" name="source" value="finance" checked>
+                                <span class="checkmark"></span>
+                                <span class="label">
+                                    <strong>АЦК-Финансы</strong>
+                                    <small>Исполнение, обязательства</small>
+                                </span>
+                            </label>
+                            <label class="checkbox-item active">
+                                <input type="checkbox" name="source" value="goszakaz" checked>
+                                <span class="checkmark"></span>
+                                <span class="label">
+                                    <strong>АЦК-Госзаказ</strong>
+                                    <small>Закупки, контракты, платежи</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Object Filter -->
+                <div class="filter-card">
+                    <div class="filter-header">
+                        <div class="filter-icon object-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                                <polyline points="9 22 9 12 15 12 15 22"/>
+                            </svg>
+                        </div>
+                        <h3>Объект / КЦСР</h3>
+                    </div>
+                    <div class="filter-body">
+                        <div class="select-wrapper">
+                            <input type="text" id="objectSearch" class="tag-input" placeholder="Выберите объекты...">
+                            <div class="tags-container" id="selectedObjects"></div>
+                        </div>
+                        <div class="object-list" id="objectList">
+                            <div class="object-item" data-code="08.3.02.97070">
+                                <span class="code">08.3.02.97070</span>
+                                <span class="name">Оздоровительная кампания детей</span>
+                            </div>
+                            <div class="object-item" data-code="02.2.01.97003">
+                                <span class="code">02.2.01.97003</span>
+                                <span class="name">Дорожное хозяйство</span>
+                            </div>
+                            <div class="object-item" data-code="88.8.00.61050">
+                                <span class="code">88.8.00.61050</span>
+                                <span class="name">Списание задолженности</span>
+                            </div>
+                            <div class="object-item" data-code="13.2.01.97003">
+                                <span class="code">13.2.01.97003</span>
+                                <span class="name">Транспортная сфера</span>
+                            </div>
+                            <div class="object-item" data-code="05.2.01.97002">
+                                <span class="code">05.2.01.97002</span>
+                                <span class="name">Коммунальная инфраструктура</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Indicators Filter -->
+                <div class="filter-card">
+                    <div class="filter-header">
+                        <div class="filter-icon indicator-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="20" x2="18" y2="10"/>
+                                <line x1="12" y1="20" x2="12" y2="4"/>
+                                <line x1="6" y1="20" x2="6" y2="14"/>
+                            </svg>
+                        </div>
+                        <h3>Показатели</h3>
+                    </div>
+                    <div class="filter-body">
+                        <div class="indicator-grid">
+                            <label class="indicator-item active">
+                                <input type="checkbox" name="indicator" value="plan" checked>
+                                <span class="indicator-card">
+                                    <span class="indicator-value">План</span>
+                                    <span class="indicator-desc">Лимиты budget</span>
+                                </span>
+                            </label>
+                            <label class="indicator-item active">
+                                <input type="checkbox" name="indicator" value="kassa" checked>
+                                <span class="indicator-card">
+                                    <span class="indicator-value">Касса</span>
+                                    <span class="indicator-desc">Фактическое исполнение</span>
+                                </span>
+                            </label>
+                            <label class="indicator-item active">
+                                <input type="checkbox" name="indicator" value="obligations" checked>
+                                <span class="indicator-card">
+                                    <span class="indicator-value">Обязательства</span>
+                                    <span class="indicator-desc">Бюджетные и денежные</span>
+                                </span>
+                            </label>
+                            <label class="indicator-item active">
+                                <input type="checkbox" name="indicator" value="contracts" checked>
+                                <span class="indicator-card">
+                                    <span class="indicator-value">Контракты</span>
+                                    <span class="indicator-desc">Заключенные договоры</span>
+                                </span>
+                            </label>
+                            <label class="indicator-item active">
+                                <input type="checkbox" name="indicator" value="payments" checked>
+                                <span class="indicator-card">
+                                    <span class="indicator-value">Платежи</span>
+                                    <span class="indicator-desc">Кассовые выплаты</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Period Filter -->
+                <div class="filter-card">
+                    <div class="filter-header">
+                        <div class="filter-icon period-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8" y1="2" x2="8" y2="6"/>
+                                <line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                        </div>
+                        <h3>Период</h3>
+                    </div>
+                    <div class="filter-body">
+                        <div class="period-tabs">
+                            <button class="tab-btn active" data-period="single">Конкретная дата</button>
+                            <button class="tab-btn" data-period="compare">Сравнение</button>
+                        </div>
+                        <div class="period-content">
+                            <div class="single-period" id="singlePeriod">
+                                <label class="date-label">Дата среза:</label>
+                                <input type="date" id="singleDate" class="date-input" value="2025-01-01">
+                            </div>
+                            <div class="compare-period hidden" id="comparePeriod">
+                                <div class="date-range">
+                                    <label class="date-label">Период 1:</label>
+                                    <input type="date" id="date1Start" class="date-input" value="2024-01-01">
+                                    <span class="date-separator">—</span>
+                                    <input type="date" id="date1End" class="date-input" value="2024-12-31">
+                                </div>
+                                <div class="date-range">
+                                    <label class="date-label">Период 2:</label>
+                                    <input type="date" id="date2Start" class="date-input" value="2025-01-01">
+                                    <span class="date-separator">—</span>
+                                    <input type="date" id="date2End" class="date-input" value="2025-12-31">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="generateReport">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Сформировать выборку
+                </button>
+                <button class="btn btn-secondary" id="clearFilters">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Очистить фильтры
+                </button>
+                <button class="btn btn-outline" id="exportExcel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Экспорт в Excel
+                </button>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section hidden" id="resultsSection">
+            <div class="results-header">
+                <h2>Результаты выборки</h2>
+                <div class="view-toggle">
+                    <button class="toggle-btn active" data-view="table">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="9" y1="21" x2="9" y2="9"/>
+                        </svg>
+                        Таблица
+                    </button>
+                    <button class="toggle-btn" data-view="chart">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        График
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <div class="table-view" id="tableView">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>КЦСР</th>
+                                <th>Наименование объекта</th>
+                                <th>План (руб.)</th>
+                                <th>Касса (руб.)</th>
+                                <th>Обязательства (руб.)</th>
+                                <th>Контракты (руб.)</th>
+                                <th>Платежи (руб.)</th>
+                                <th>% исполнения</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Data will be populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Chart View -->
+            <div class="chart-view hidden" id="chartView">
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h4>Сравнение показателей</h4>
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h4>Структура расходов</h4>
+                        <canvas id="pieChart"></canvas>
+                    </div>
+                    <div class="chart-card full-width">
+                        <h4>Динамика во времени</h4>
+                        <canvas id="lineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <div class="loading-overlay hidden" id="loadingOverlay">
+            <div class="loader">
+                <div class="spinner"></div>
+                <p>Формирование выборки...</p>
+                <small>Анализ данных из 3 источников</small>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>© 2025 Конструктор аналитических выборок | БФТ и Министерство финансов Амурской области</p>
+            <p class="footer-note">Прототип для хакатона • Данные загружаются из CSV файлов</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
